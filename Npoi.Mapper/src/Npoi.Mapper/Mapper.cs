@@ -319,11 +319,11 @@ namespace Npoi.Mapper
         /// <param name="objects">The objects to save.</param>
         /// <param name="sheetName">The sheet name</param>
         /// <param name="overwrite"><c>true</c> to overwrite existing rows; otherwise append.</param>
-        public void Put<T>(IEnumerable<T> objects, string sheetName, bool overwrite = true)
+        public void Put<T>(IEnumerable<T> objects, string sheetName, bool overwrite = true, int rowOffset = 0, bool shiftDownExistingRows = false)
         {
             if (Workbook == null) Workbook = new XSSFWorkbook();
             var sheet = Workbook.GetSheet(sheetName) ?? Workbook.CreateSheet(sheetName);
-            Put(sheet, objects, overwrite);
+            Put(sheet, objects, overwrite, rowOffset, shiftDownExistingRows);
         }
 
         /// <summary>
@@ -333,11 +333,11 @@ namespace Npoi.Mapper
         /// <param name="objects">The objects to save.</param>
         /// <param name="sheetIndex">The sheet index, default is 0.</param>
         /// <param name="overwrite"><c>true</c> to overwrite existing rows; otherwise append.</param>
-        public void Put<T>(IEnumerable<T> objects, int sheetIndex = 0, bool overwrite = true)
+        public void Put<T>(IEnumerable<T> objects, int sheetIndex = 0, bool overwrite = true, int rowOffset = 0, bool shiftDownExistingRows = false)
         {
             if (Workbook == null) Workbook = new XSSFWorkbook();
             var sheet = Workbook.NumberOfSheets > sheetIndex ? Workbook.GetSheetAt(sheetIndex) : Workbook.CreateSheet();
-            Put(sheet, objects, overwrite);
+            Put(sheet, objects, overwrite, rowOffset, shiftDownExistingRows);
         }
 
         /// <summary>
@@ -859,7 +859,7 @@ namespace Npoi.Mapper
 
         #region Export
 
-        private void Put<T>(ISheet sheet, IEnumerable<T> objects, bool overwrite)
+        private void Put<T>(ISheet sheet, IEnumerable<T> objects, bool overwrite, int rowOffset = 0, bool shiftDownExistingRows = false)
         {
             var sheetName = sheet.SheetName;
             var firstRow = sheet.GetRow(sheet.FirstRowNum);
@@ -874,13 +874,29 @@ namespace Npoi.Mapper
                 ? HasHeader ? sheet.FirstRowNum + 1 : sheet.FirstRowNum
                 : sheet.GetRow(sheet.LastRowNum) != null ? sheet.LastRowNum + 1 : sheet.LastRowNum;
 
+            rowIndex += rowOffset;
+
+            ICellStyle cellStyle = null;
+
+            if(shiftDownExistingRows)
+            {
+                var cell = sheet.GetRow(rowIndex)?.GetCell(0);
+                if(cell != null)
+                {
+                    cellStyle = Workbook.CreateCellStyle();
+                    cellStyle.CloneStyleFrom(cell.CellStyle);
+                }
+                
+                sheet.ShiftRows(rowIndex, sheet.LastRowNum, objectArray.Length, true, false);
+            }
+
             MapHelper.EnsureDefaultFormats(columns, TypeFormats);
 
             foreach (var o in objectArray)
             {
                 var row = sheet.GetRow(rowIndex);
 
-                if (overwrite && row != null)
+                if (overwrite && !shiftDownExistingRows && row != null)
                 {
                     sheet.RemoveRow(row);
                     row = sheet.CreateRow(rowIndex);
@@ -893,11 +909,16 @@ namespace Npoi.Mapper
                     var pi = column.Attribute.Property;
                     var value = pi?.GetValue(o);
                     var cell = row.GetCell(column.Attribute.Index, MissingCellPolicy.CREATE_NULL_AS_BLANK);
+                    
 
                     column.CurrentValue = value;
                     if (column.Attribute.TryPut == null || column.Attribute.TryPut(column, o))
                     {
-                        SetCell(cell, column.CurrentValue, column, setStyle: overwrite);
+                        SetCell(cell, column.CurrentValue, column, setStyle: overwrite && !shiftDownExistingRows);
+                        if(cellStyle != null)
+                        {
+                            cell.CellStyle = cellStyle;
+                        }
                     }
                 }
 
@@ -905,7 +926,7 @@ namespace Npoi.Mapper
             }
 
             // Remove not used rows if any.
-            while (overwrite && rowIndex <= sheet.LastRowNum)
+            while (overwrite && !shiftDownExistingRows && rowIndex <= sheet.LastRowNum)
             {
                 var row = sheet.GetRow(rowIndex);
                 if (row != null) sheet.RemoveRow(row);
