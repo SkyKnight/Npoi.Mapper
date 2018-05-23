@@ -876,15 +876,15 @@ namespace Npoi.Mapper
 
             rowIndex += rowOffset;
 
-            ICellStyle cellStyle = null;
+            ICellStyle baseRowCellStyle = null;
 
             if(shiftDownExistingRows)
             {
                 var cell = sheet.GetRow(rowIndex)?.GetCell(0);
                 if(cell != null)
                 {
-                    cellStyle = Workbook.CreateCellStyle();
-                    cellStyle.CloneStyleFrom(cell.CellStyle);
+                    baseRowCellStyle = Workbook.CreateCellStyle();
+                    baseRowCellStyle.CloneStyleFrom(cell.CellStyle);
                 }
                 
                 sheet.ShiftRows(rowIndex, sheet.LastRowNum, objectArray.Length, true, false);
@@ -914,9 +914,12 @@ namespace Npoi.Mapper
                     column.CurrentValue = value;
                     if (column.Attribute.TryPut == null || column.Attribute.TryPut(column, o))
                     {
-                        SetCell(cell, column.CurrentValue, column, setStyle: overwrite && !shiftDownExistingRows);
-                        if(cellStyle != null)
+                        SetCell(cell, column.CurrentValue, column, setStyle: overwrite);
+                        if(baseRowCellStyle != null)
                         {
+                            var cellStyle = Workbook.CreateCellStyle();
+                            cellStyle.CloneStyleFrom(baseRowCellStyle);
+                            cellStyle.DataFormat = cell.CellStyle.DataFormat;
                             cell.CellStyle = cellStyle;
                         }
                     }
@@ -1042,7 +1045,7 @@ namespace Npoi.Mapper
             {
                 cell.SetCellValue((string)null);
             }
-            else if (value is DateTime)
+            else if (value is DateTime || value is DateTime?)
             {
                 cell.SetCellValue((DateTime)value);
             }
